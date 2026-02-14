@@ -60,6 +60,67 @@ except Exception as e:
         {'type': 'TPU', 'settings_id': 'Generic TPU'},
     ]
 
+def is_bambu_file(filepath):
+    """
+    Check if a .3mf file is a Bambu Lab file (not already Snapmaker).
+    Returns True if it's a Bambu file, False if Snapmaker or unrecognized.
+    """
+    try:
+        with zipfile.ZipFile(filepath, 'r') as z:
+            if "Metadata/slice_info.config" in z.namelist():
+                with z.open("Metadata/slice_info.config") as f:
+                    content = f.read().decode('utf-8')
+                    # Check for Bambu printer models
+                    if 'Snapmaker' in content:
+                        return False
+                    if 'Bambu' in content or 'BambuLab' in content:
+                        return True
+            # If no slice_info, check project_settings
+            if "Metadata/project_settings.config" in z.namelist():
+                with z.open("Metadata/project_settings.config") as f:
+                    settings = json.loads(f.read().decode('utf-8'))
+                    printer = settings.get('printer_model', '')
+                    if 'Snapmaker' in printer:
+                        return False
+                    if 'Bambu' in printer or 'X1' in printer or 'P1' in printer or 'A1' in printer:
+                        return True
+            return True  # Default to True if can't determine
+    except Exception as e:
+        print(f"Error checking file type: {e}")
+        return False
+
+
+def auto_map_filaments(filaments):
+    """
+    Automatically map filament types to closest U1 profiles.
+    Returns a colors dict ready for conversion.
+    """
+    # Build type mapping from available filaments
+    type_mapping = {}
+    for ft in AVAILABLE_FILAMENTS:
+        base_type = ft['type'].upper().replace('-HF', '').replace('-', '')
+        type_mapping[base_type] = ft['type']
+
+    colors = {}
+    for fil in filaments:
+        original_type = (fil.get('type') or 'PLA').upper()
+        # Try to find matching U1 type
+        mapped_type = None
+        for base, u1_type in type_mapping.items():
+            if base in original_type or original_type in base:
+                mapped_type = u1_type
+                break
+        # Default to PLA if no match
+        if not mapped_type:
+            mapped_type = AVAILABLE_FILAMENTS[0]['type'] if AVAILABLE_FILAMENTS else 'PLA'
+
+        colors[fil['id']] = {
+            'color': fil['color'],
+            'type': mapped_type
+        }
+    return colors
+
+
 def normalize_color(color):
     """
     Normalize color to #RRGGBB format for HTML color input compatibility.
@@ -119,62 +180,19 @@ def parse_bambu_filaments(filepath):
         print(f"Error parsing filaments: {e}")
     return filaments
 
-@app.route('/')
-def index():
-    return render_template('index.html')
 
-@app.route('/filament-types')
-def get_filament_types():
-    """Return available filament types for the frontend dropdown."""
-    return jsonify(AVAILABLE_FILAMENTS)
+def convert_single_file(input_path, output_path, user_colors):
+    """
+    Convert a single Bambu .3mf file to Snapmaker U1 format.
 
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    # Cleanup old files on each upload
-    cleanup_old_files()
+    Args:
+        input_path: Path to the input Bambu .3mf file
+        output_path: Path where the converted file will be saved
+        user_colors: Dict {original_filament_id: {color: #hex, type: PLA}}
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-
-    # Generate unique session ID
-    session_id = str(uuid.uuid4())[:8]
-    input_filename = f"{session_id}_input.3mf"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], input_filename)
-    file.save(filepath)
-
-    # Analyze colors
-    filaments = parse_bambu_filaments(filepath)
-
-    if len(filaments) > 4:
-        os.remove(filepath)  # Clean up
-        return jsonify({'error': f'Too many colors ({len(filaments)}). The U1 supports a maximum of 4.'}), 400
-
-    return jsonify({
-        'session_id': session_id,
-        'filaments': filaments
-    })
-
-@app.route('/convert', methods=['POST'])
-def convert():
-    data = request.json
-    session_id = data.get('session_id')
-    if not session_id:
-        return jsonify({'error': 'No session ID provided'}), 400
-
-    input_filename = f"{session_id}_input.3mf"
-    output_filename = f"{session_id}_U1_Ready.3mf"
-    input_path = os.path.join(app.config['UPLOAD_FOLDER'], input_filename)
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
-
-    if not os.path.exists(input_path):
-        return jsonify({'error': 'Session expired or file not found'}), 404
-
-    user_colors = data.get('colors', {})  # Dict {original_filament_id: {color: #hex, type: PLA}}
-
+    Returns:
+        (success, error_message) - Tuple with success bool and error string if failed
+    """
     # 1. Copy the original file to start
     shutil.copy(input_path, output_path)
 
@@ -183,7 +201,7 @@ def convert():
         with zipfile.ZipFile(input_path, 'r') as z_orig:
             original_project_settings = json.loads(z_orig.read('Metadata/project_settings.config').decode('utf-8'))
     except Exception as e:
-        return jsonify({'error': f'Could not read original project settings: {e}'}), 500
+        return (False, f'Could not read original project settings: {e}')
 
     # Determine which template to use based on support settings
     different_settings = original_project_settings.get('different_settings_to_system', [])
@@ -198,7 +216,7 @@ def convert():
         with zipfile.ZipFile(template_file, 'r') as z_templ:
             u1_project_settings_json = json.loads(z_templ.read('Metadata/project_settings.config').decode('utf-8'))
     except Exception as e:
-        return jsonify({'error': f'U1 Template ({template_file}) not found on server: {e}'}), 500
+        return (False, f'U1 Template ({template_file}) not found on server: {e}')
 
     # 4. Process the 3MF archive
     temp_zip = output_path + ".temp"
@@ -294,7 +312,6 @@ def convert():
 
                 # Get the number of filaments from the original file
                 original_filaments = parse_bambu_filaments(input_path)
-                num_filaments = len(original_filaments)
 
                 # Build the new filament colors list based on user selections
                 # user_colors is keyed by original filament ID
@@ -378,19 +395,228 @@ def convert():
                         zout.writestr(item, content)
 
         shutil.move(temp_zip, output_path)
-
-        return jsonify({'download_url': f'/download/{output_filename}'})
+        return (True, None)
 
     except Exception as e:
         if os.path.exists(temp_zip):
             os.remove(temp_zip)
-        return jsonify({'error': str(e)}), 500
+        return (False, str(e))
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/filament-types')
+def get_filament_types():
+    """Return available filament types for the frontend dropdown."""
+    return jsonify(AVAILABLE_FILAMENTS)
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    # Cleanup old files on each upload
+    cleanup_old_files()
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    # Generate unique session ID
+    session_id = str(uuid.uuid4())[:8]
+    input_filename = f"{session_id}_input.3mf"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], input_filename)
+    file.save(filepath)
+
+    # Analyze colors
+    filaments = parse_bambu_filaments(filepath)
+
+    if len(filaments) > 4:
+        os.remove(filepath)  # Clean up
+        return jsonify({'error': f'Too many colors ({len(filaments)}). The U1 supports a maximum of 4.'}), 400
+
+    return jsonify({
+        'session_id': session_id,
+        'filaments': filaments
+    })
+
+@app.route('/convert', methods=['POST'])
+def convert():
+    data = request.json
+    session_id = data.get('session_id')
+    if not session_id:
+        return jsonify({'error': 'No session ID provided'}), 400
+
+    input_filename = f"{session_id}_input.3mf"
+    output_filename = f"{session_id}_U1_Ready.3mf"
+    input_path = os.path.join(app.config['UPLOAD_FOLDER'], input_filename)
+    output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+
+    if not os.path.exists(input_path):
+        return jsonify({'error': 'Session expired or file not found'}), 404
+
+    user_colors = data.get('colors', {})  # Dict {original_filament_id: {color: #hex, type: PLA}}
+
+    success, error = convert_single_file(input_path, output_path, user_colors)
+
+    if success:
+        return jsonify({'download_url': f'/download/{output_filename}'})
+    else:
+        return jsonify({'error': error}), 500
+
+
+@app.route('/batch-analyze', methods=['POST'])
+def batch_analyze():
+    """Analyze multiple uploaded .3mf files for batch conversion."""
+    cleanup_old_files()
+
+    if 'files[]' not in request.files:
+        return jsonify({'error': 'No files uploaded'}), 400
+
+    files = request.files.getlist('files[]')
+    if not files or len(files) == 0:
+        return jsonify({'error': 'No files selected'}), 400
+
+    # Generate batch session ID
+    batch_session_id = str(uuid.uuid4())[:8]
+    batch_folder = os.path.join(app.config['UPLOAD_FOLDER'], f"batch_{batch_session_id}")
+    os.makedirs(batch_folder, exist_ok=True)
+
+    bambu_files = []
+    skipped_files = []
+
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith('.3mf'):
+            continue
+
+        # Save file temporarily
+        safe_filename = os.path.basename(file.filename)
+        filepath = os.path.join(batch_folder, safe_filename)
+        file.save(filepath)
+
+        # Check if it's a Bambu file
+        if is_bambu_file(filepath):
+            filaments = parse_bambu_filaments(filepath)
+            if len(filaments) > 4:
+                skipped_files.append({
+                    'filename': safe_filename,
+                    'reason': f'Too many colors ({len(filaments)})'
+                })
+                os.remove(filepath)
+            else:
+                auto_colors = auto_map_filaments(filaments)
+                bambu_files.append({
+                    'filename': safe_filename,
+                    'filaments': filaments,
+                    'auto_colors': auto_colors
+                })
+        else:
+            skipped_files.append({
+                'filename': safe_filename,
+                'reason': 'Already Snapmaker or not a Bambu file'
+            })
+            os.remove(filepath)
+
+    if not bambu_files:
+        # Clean up empty batch folder
+        shutil.rmtree(batch_folder, ignore_errors=True)
+        return jsonify({'error': 'No valid Bambu Lab .3mf files found'}), 400
+
+    return jsonify({
+        'batch_session_id': batch_session_id,
+        'files': bambu_files,
+        'skipped': skipped_files
+    })
+
+
+@app.route('/batch-convert', methods=['POST'])
+def batch_convert():
+    """Convert all files in a batch session and return a ZIP."""
+    data = request.json
+    batch_session_id = data.get('batch_session_id')
+    if not batch_session_id:
+        return jsonify({'error': 'No batch session ID provided'}), 400
+
+    batch_folder = os.path.join(app.config['UPLOAD_FOLDER'], f"batch_{batch_session_id}")
+    if not os.path.exists(batch_folder):
+        return jsonify({'error': 'Batch session expired or not found'}), 404
+
+    # Get the list of files to convert
+    files_to_convert = data.get('files', [])
+    if not files_to_convert:
+        # If no specific files provided, convert all in folder
+        files_to_convert = [f for f in os.listdir(batch_folder) if f.endswith('.3mf')]
+
+    converted_files = []
+    errors = []
+    output_folder = os.path.join(batch_folder, 'output')
+    os.makedirs(output_folder, exist_ok=True)
+
+    for file_info in files_to_convert:
+        # Handle both dict (from frontend) and string (filename) formats
+        if isinstance(file_info, dict):
+            filename = file_info.get('filename')
+            auto_colors = file_info.get('auto_colors', {})
+        else:
+            filename = file_info
+            # Parse filaments and auto-map for this file
+            input_path = os.path.join(batch_folder, filename)
+            filaments = parse_bambu_filaments(input_path)
+            auto_colors = auto_map_filaments(filaments)
+
+        input_path = os.path.join(batch_folder, filename)
+        if not os.path.exists(input_path):
+            errors.append({'filename': filename, 'error': 'File not found'})
+            continue
+
+        # Generate output filename: original_name_U1.3mf
+        base_name = os.path.splitext(filename)[0]
+        output_filename = f"{base_name}_U1.3mf"
+        output_path = os.path.join(output_folder, output_filename)
+
+        success, error = convert_single_file(input_path, output_path, auto_colors)
+
+        if success:
+            converted_files.append(output_filename)
+        else:
+            errors.append({'filename': filename, 'error': error})
+
+    if not converted_files:
+        return jsonify({'error': 'No files were converted successfully', 'details': errors}), 500
+
+    # Create ZIP archive of all converted files
+    zip_filename = f"{batch_session_id}_U1_Batch.zip"
+    zip_path = os.path.join(app.config['UPLOAD_FOLDER'], zip_filename)
+
+    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        for filename in converted_files:
+            filepath = os.path.join(output_folder, filename)
+            zf.write(filepath, filename)
+
+    # Clean up batch folder
+    shutil.rmtree(batch_folder, ignore_errors=True)
+
+    return jsonify({
+        'download_url': f'/download/{zip_filename}',
+        'converted_count': len(converted_files),
+        'error_count': len(errors),
+        'errors': errors
+    })
+
 
 @app.route('/download/<path:filename>')
 def download_file(filename):
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    # Give user a clean filename regardless of internal session ID
-    return send_file(filepath, as_attachment=True, download_name='Snapmaker_U1_Ready.3mf')
+
+    # Determine download name based on file type
+    if filename.endswith('.zip'):
+        download_name = 'Snapmaker_U1_Batch.zip'
+    else:
+        download_name = 'Snapmaker_U1_Ready.3mf'
+
+    return send_file(filepath, as_attachment=True, download_name=download_name)
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)

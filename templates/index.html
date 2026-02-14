@@ -13,12 +13,24 @@
         <h1 class="text-3xl font-bold text-center mb-2 text-cyan-400">
             <i class="fa-solid fa-shuttle-space mr-2"></i> Bambu <i class="fa-solid fa-arrow-right mx-2 text-sm text-gray-500"></i> Snapmaker U1
         </h1>
-        <p class="text-center text-slate-400 mb-8">
+        <p class="text-center text-slate-400 mb-6">
             Convert .3mf projects, keeping color painting while changing the machine.
             <button id="info-btn" class="ml-1 text-cyan-400 hover:text-cyan-300 transition-colors">
                 <i class="fa-solid fa-circle-info"></i>
             </button>
         </p>
+
+        <!-- Mode Toggle -->
+        <div class="flex justify-center mb-6">
+            <div class="bg-slate-700 rounded-lg p-1 inline-flex">
+                <button id="single-mode-btn" class="px-4 py-2 rounded-md text-sm font-medium transition-all bg-cyan-600 text-white">
+                    <i class="fa-solid fa-file mr-2"></i>Single File
+                </button>
+                <button id="batch-mode-btn" class="px-4 py-2 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-folder-open mr-2"></i>Batch Convert
+                </button>
+            </div>
+        </div>
 
         <!-- Info Modal -->
         <div id="info-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -34,46 +46,133 @@
                     <li><i class="fa-solid fa-check text-green-400 mr-2"></i>Applies the 0.20mm Standard print profile</li>
                     <li><i class="fa-solid fa-check text-green-400 mr-2"></i>Remaps colors and filament types to U1 compatible profiles</li>
                     <li><i class="fa-solid fa-check text-green-400 mr-2"></i>Enables Tree Supports (auto) if the original model has supports enabled</li>
+                    <li><i class="fa-solid fa-check text-green-400 mr-2"></i><strong>Batch mode:</strong> Convert entire folders with automatic filament mapping</li>
                 </ul>
                 <p class="text-slate-500 text-xs mt-4">Note: The converted file should be opened in Snapmaker Orca for final slicing.</p>
             </div>
         </div>
 
-        <div id="step1" class="transition-all">
-            <div class="flex items-center justify-center w-full">
-                <label for="file-upload" id="drop-zone" class="flex flex-col items-center justify-center w-full h-64 border-2 border-slate-600 border-dashed rounded-lg cursor-pointer bg-slate-700 hover:bg-slate-600 hover:border-cyan-500 transition-colors">
-                    <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                        <i class="fa-solid fa-cloud-arrow-up text-4xl mb-3 text-cyan-400"></i>
-                        <p class="mb-2 text-sm text-gray-300"><span class="font-semibold">Click to upload</span> or drag and drop the Bambu file</p>
-                        <p class="text-xs text-gray-500">Only .3mf files</p>
-                    </div>
-                    <input id="file-upload" type="file" class="hidden" accept=".3mf" />
-                </label>
+        <!-- Single File Mode -->
+        <div id="single-mode" class="transition-all">
+            <div id="step1" class="transition-all">
+                <div class="flex items-center justify-center w-full">
+                    <label for="file-upload" id="drop-zone" class="flex flex-col items-center justify-center w-full h-64 border-2 border-slate-600 border-dashed rounded-lg cursor-pointer bg-slate-700 hover:bg-slate-600 hover:border-cyan-500 transition-colors">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                            <i class="fa-solid fa-cloud-arrow-up text-4xl mb-3 text-cyan-400"></i>
+                            <p class="mb-2 text-sm text-gray-300"><span class="font-semibold">Click to upload</span> or drag and drop the Bambu file</p>
+                            <p class="text-xs text-gray-500">Only .3mf files</p>
+                        </div>
+                        <input id="file-upload" type="file" class="hidden" accept=".3mf" />
+                    </label>
+                </div>
+            </div>
+
+            <div id="step2" class="hidden mt-6">
+                <h3 class="text-xl font-semibold mb-4 border-b border-slate-600 pb-2">U1 Filament Configuration</h3>
+                <p class="text-sm text-slate-400 mb-4">I have detected these filaments. How do you want to map them to the U1?</p>
+
+                <div id="filament-list" class="space-y-4">
+                </div>
+
+                <div class="flex gap-3 mt-6">
+                    <button id="btn-convert" class="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded transition-colors flex justify-center items-center">
+                        <span>Convert and Download</span>
+                        <i class="fa-solid fa-bolt ml-2"></i>
+                    </button>
+                    <button id="btn-new" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-3 px-4 rounded transition-colors flex justify-center items-center">
+                        <i class="fa-solid fa-rotate-right mr-2"></i>
+                        <span>New</span>
+                    </button>
+                </div>
             </div>
         </div>
 
-        <div id="step2" class="hidden mt-6">
-            <h3 class="text-xl font-semibold mb-4 border-b border-slate-600 pb-2">U1 Filament Configuration</h3>
-            <p class="text-sm text-slate-400 mb-4">I have detected these filaments. How do you want to map them to the U1?</p>
-            
-            <div id="filament-list" class="space-y-4">
+        <!-- Batch Mode -->
+        <div id="batch-mode" class="hidden transition-all">
+            <div id="batch-step1" class="transition-all">
+                <div class="flex items-center justify-center w-full">
+                    <label for="batch-upload" id="batch-drop-zone" class="flex flex-col items-center justify-center w-full h-64 border-2 border-slate-600 border-dashed rounded-lg cursor-pointer bg-slate-700 hover:bg-slate-600 hover:border-cyan-500 transition-colors">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                            <i class="fa-solid fa-folder-open text-4xl mb-3 text-cyan-400"></i>
+                            <p class="mb-2 text-sm text-gray-300"><span class="font-semibold">Click to select a folder</span> or drag and drop multiple files</p>
+                            <p class="text-xs text-gray-500">Select a folder with .3mf files for batch conversion</p>
+                        </div>
+                        <input id="batch-upload" type="file" class="hidden" accept=".3mf" webkitdirectory multiple />
+                    </label>
+                </div>
             </div>
 
-            <div class="flex gap-3 mt-6">
-                <button id="btn-convert" class="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded transition-colors flex justify-center items-center">
-                    <span>Convert and Download</span>
-                    <i class="fa-solid fa-bolt ml-2"></i>
-                </button>
-                <button id="btn-new" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-3 px-4 rounded transition-colors flex justify-center items-center">
-                    <i class="fa-solid fa-rotate-right mr-2"></i>
-                    <span>New</span>
-                </button>
+            <div id="batch-step2" class="hidden mt-6">
+                <h3 class="text-xl font-semibold mb-4 border-b border-slate-600 pb-2">
+                    <i class="fa-solid fa-list-check mr-2 text-cyan-400"></i>Batch Conversion Preview
+                </h3>
+
+                <!-- Files to convert -->
+                <div id="batch-files-container" class="mb-4">
+                    <p class="text-sm text-green-400 mb-2">
+                        <i class="fa-solid fa-check-circle mr-1"></i>
+                        <span id="batch-count">0</span> files ready to convert:
+                    </p>
+                    <div id="batch-file-list" class="space-y-2 max-h-48 overflow-y-auto">
+                    </div>
+                </div>
+
+                <!-- Skipped files -->
+                <div id="skipped-files-container" class="hidden mb-4">
+                    <p class="text-sm text-yellow-400 mb-2">
+                        <i class="fa-solid fa-exclamation-triangle mr-1"></i>
+                        <span id="skipped-count">0</span> files skipped:
+                    </p>
+                    <div id="skipped-file-list" class="space-y-1 max-h-24 overflow-y-auto text-xs">
+                    </div>
+                </div>
+
+                <div class="flex gap-3 mt-6">
+                    <button id="btn-batch-convert" class="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-4 rounded transition-colors flex justify-center items-center">
+                        <span>Convert All and Download ZIP</span>
+                        <i class="fa-solid fa-file-zipper ml-2"></i>
+                    </button>
+                    <button id="btn-batch-new" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-3 px-4 rounded transition-colors flex justify-center items-center">
+                        <i class="fa-solid fa-rotate-right mr-2"></i>
+                        <span>New</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Batch Progress -->
+            <div id="batch-progress" class="hidden mt-6">
+                <h3 class="text-xl font-semibold mb-4 border-b border-slate-600 pb-2">
+                    <i class="fa-solid fa-cog fa-spin mr-2 text-cyan-400"></i>Converting...
+                </h3>
+                <div class="w-full bg-slate-700 rounded-full h-4 mb-2">
+                    <div id="progress-bar" class="bg-cyan-500 h-4 rounded-full transition-all" style="width: 0%"></div>
+                </div>
+                <p id="progress-text" class="text-sm text-slate-400 text-center">Preparing conversion...</p>
+            </div>
+
+            <!-- Batch Complete -->
+            <div id="batch-complete" class="hidden mt-6 text-center">
+                <div class="mb-4">
+                    <i class="fa-solid fa-circle-check text-6xl text-green-400"></i>
+                </div>
+                <h3 class="text-xl font-semibold mb-2 text-green-400">Conversion Complete!</h3>
+                <p id="complete-summary" class="text-sm text-slate-400 mb-4"></p>
+                <div class="flex gap-3 justify-center">
+                    <a id="batch-download-link" href="#" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-6 rounded transition-colors inline-flex items-center">
+                        <i class="fa-solid fa-download mr-2"></i>
+                        Download ZIP
+                    </a>
+                    <button id="btn-batch-restart" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-3 px-4 rounded transition-colors flex items-center">
+                        <i class="fa-solid fa-rotate-right mr-2"></i>
+                        New Batch
+                    </button>
+                </div>
             </div>
         </div>
 
         <div id="loading" class="hidden mt-6 text-center">
             <i class="fa-solid fa-circle-notch fa-spin text-4xl text-cyan-400"></i>
-            <p class="mt-2 text-slate-400">Processing geometry...</p>
+            <p class="mt-2 text-slate-400">Processing...</p>
         </div>
     </div>
 
@@ -84,11 +183,43 @@
     </a>
 
     <script>
+        // Mode state
+        let currentMode = 'single'; // 'single' or 'batch'
         let currentSessionId = "";
+        let batchSessionId = "";
+        let batchFiles = [];
+
+        // Mode toggle buttons
+        const singleModeBtn = document.getElementById('single-mode-btn');
+        const batchModeBtn = document.getElementById('batch-mode-btn');
+        const singleMode = document.getElementById('single-mode');
+        const batchMode = document.getElementById('batch-mode');
+
+        singleModeBtn.addEventListener('click', () => {
+            currentMode = 'single';
+            singleModeBtn.classList.add('bg-cyan-600', 'text-white');
+            singleModeBtn.classList.remove('text-slate-400');
+            batchModeBtn.classList.remove('bg-cyan-600', 'text-white');
+            batchModeBtn.classList.add('text-slate-400');
+            singleMode.classList.remove('hidden');
+            batchMode.classList.add('hidden');
+        });
+
+        batchModeBtn.addEventListener('click', () => {
+            currentMode = 'batch';
+            batchModeBtn.classList.add('bg-cyan-600', 'text-white');
+            batchModeBtn.classList.remove('text-slate-400');
+            singleModeBtn.classList.remove('bg-cyan-600', 'text-white');
+            singleModeBtn.classList.add('text-slate-400');
+            batchMode.classList.remove('hidden');
+            singleMode.classList.add('hidden');
+        });
+
+        // Single file mode elements
         const dropZone = document.getElementById('drop-zone');
         const fileUpload = document.getElementById('file-upload');
 
-        // Drag and drop listeners
+        // Drag and drop listeners for single file
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('border-cyan-500', 'bg-slate-600');
@@ -260,7 +391,7 @@
                     body: JSON.stringify({ session_id: currentSessionId, colors: colors })
                 });
                 const data = await res.json();
-                
+
                 if (data.download_url) {
                     window.location.href = data.download_url;
                 } else {
@@ -270,6 +401,179 @@
                 alert("Connection Error");
             }
         });
+
+        // ========== BATCH MODE ==========
+        const batchDropZone = document.getElementById('batch-drop-zone');
+        const batchUpload = document.getElementById('batch-upload');
+
+        // Drag and drop for batch
+        batchDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            batchDropZone.classList.add('border-cyan-500', 'bg-slate-600');
+        });
+
+        batchDropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            batchDropZone.classList.remove('border-cyan-500', 'bg-slate-600');
+        });
+
+        batchDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            batchDropZone.classList.remove('border-cyan-500', 'bg-slate-600');
+            handleBatchFiles(e.dataTransfer.files);
+        });
+
+        batchUpload.addEventListener('change', (e) => {
+            handleBatchFiles(e.target.files);
+        });
+
+        async function handleBatchFiles(files) {
+            if (!files || files.length === 0) return;
+
+            // Filter to .3mf files only
+            const threemfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.3mf'));
+            if (threemfFiles.length === 0) {
+                alert('No .3mf files found');
+                return;
+            }
+
+            // Show loading
+            document.getElementById('batch-step1').classList.add('opacity-50', 'pointer-events-none');
+            document.getElementById('loading').classList.remove('hidden');
+
+            const formData = new FormData();
+            threemfFiles.forEach(file => {
+                formData.append('files[]', file);
+            });
+
+            try {
+                const response = await fetch('/batch-analyze', { method: 'POST', body: formData });
+                const data = await response.json();
+
+                if (!response.ok) throw new Error(data.error);
+
+                batchSessionId = data.batch_session_id;
+                batchFiles = data.files;
+
+                // Render batch file list
+                renderBatchFiles(data.files, data.skipped);
+
+                // Move to step 2
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('batch-step1').classList.add('hidden');
+                document.getElementById('batch-step2').classList.remove('hidden');
+
+            } catch (err) {
+                alert("Error: " + err.message);
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('batch-step1').classList.remove('opacity-50', 'pointer-events-none');
+            }
+        }
+
+        function renderBatchFiles(files, skipped) {
+            const fileList = document.getElementById('batch-file-list');
+            const skippedList = document.getElementById('skipped-file-list');
+            const skippedContainer = document.getElementById('skipped-files-container');
+
+            fileList.innerHTML = '';
+            document.getElementById('batch-count').textContent = files.length;
+
+            files.forEach(file => {
+                const filamentColors = file.filaments.map(f =>
+                    `<div class="w-4 h-4 rounded-full border border-gray-500" style="background-color: ${f.color}" title="${f.type}"></div>`
+                ).join('');
+
+                const html = `
+                <div class="bg-slate-700 p-3 rounded flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-file text-cyan-400"></i>
+                        <span class="text-sm text-white truncate max-w-xs">${file.filename}</span>
+                    </div>
+                    <div class="flex gap-1">${filamentColors}</div>
+                </div>`;
+                fileList.innerHTML += html;
+            });
+
+            // Show skipped files if any
+            if (skipped && skipped.length > 0) {
+                skippedContainer.classList.remove('hidden');
+                document.getElementById('skipped-count').textContent = skipped.length;
+                skippedList.innerHTML = '';
+                skipped.forEach(file => {
+                    skippedList.innerHTML += `
+                    <div class="bg-slate-700 p-2 rounded flex items-center justify-between">
+                        <span class="text-slate-400 truncate max-w-xs">${file.filename}</span>
+                        <span class="text-yellow-400 text-xs">${file.reason}</span>
+                    </div>`;
+                });
+            } else {
+                skippedContainer.classList.add('hidden');
+            }
+        }
+
+        // Batch convert button
+        document.getElementById('btn-batch-convert').addEventListener('click', async () => {
+            // Show progress
+            document.getElementById('batch-step2').classList.add('hidden');
+            document.getElementById('batch-progress').classList.remove('hidden');
+
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+
+            progressBar.style.width = '20%';
+            progressText.textContent = `Converting ${batchFiles.length} files...`;
+
+            try {
+                const res = await fetch('/batch-convert', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        batch_session_id: batchSessionId,
+                        files: batchFiles
+                    })
+                });
+
+                progressBar.style.width = '80%';
+
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.error);
+
+                progressBar.style.width = '100%';
+
+                // Show complete
+                document.getElementById('batch-progress').classList.add('hidden');
+                document.getElementById('batch-complete').classList.remove('hidden');
+
+                document.getElementById('complete-summary').textContent =
+                    `Successfully converted ${data.converted_count} files.` +
+                    (data.error_count > 0 ? ` ${data.error_count} files failed.` : '');
+
+                document.getElementById('batch-download-link').href = data.download_url;
+
+            } catch (err) {
+                alert("Conversion Error: " + err.message);
+                document.getElementById('batch-progress').classList.add('hidden');
+                document.getElementById('batch-step2').classList.remove('hidden');
+            }
+        });
+
+        // Batch new/restart buttons
+        function resetBatchMode() {
+            document.getElementById('batch-step1').classList.remove('hidden', 'opacity-50', 'pointer-events-none');
+            document.getElementById('batch-step2').classList.add('hidden');
+            document.getElementById('batch-progress').classList.add('hidden');
+            document.getElementById('batch-complete').classList.add('hidden');
+            document.getElementById('batch-file-list').innerHTML = '';
+            document.getElementById('skipped-file-list').innerHTML = '';
+            document.getElementById('batch-upload').value = '';
+            document.getElementById('progress-bar').style.width = '0%';
+            batchSessionId = '';
+            batchFiles = [];
+        }
+
+        document.getElementById('btn-batch-new').addEventListener('click', resetBatchMode);
+        document.getElementById('btn-batch-restart').addEventListener('click', resetBatchMode);
     </script>
 </body>
 </html>
