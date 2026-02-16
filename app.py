@@ -336,13 +336,13 @@ def convert_single_file(input_path, output_path, user_colors):
                     new_filament_colors.append(color.upper())
                     new_filament_types.append(fil_type)
 
-                # Always ensure 4 filaments (U1 template requirement)
-                # Fill missing slots with white PLA
-                TARGET_FILAMENTS = 4
+                # Ensure at least 4 filaments (U1 minimum), but allow more
+                MIN_FILAMENTS = 4
                 DEFAULT_COLOR = '#FFFFFFFF'
                 DEFAULT_TYPE = 'PLA'
+                num_filaments = max(len(new_filament_colors), MIN_FILAMENTS)
 
-                while len(new_filament_colors) < TARGET_FILAMENTS:
+                while len(new_filament_colors) < MIN_FILAMENTS:
                     new_filament_colors.append(DEFAULT_COLOR)
                     new_filament_types.append(DEFAULT_TYPE)
 
@@ -363,18 +363,18 @@ def convert_single_file(input_path, output_path, user_colors):
                     new_filament_settings_ids.append(profile)
                 combined_project_settings['filament_settings_id'] = new_filament_settings_ids
 
-                # Adjust other filament arrays to always have 4 filaments
+                # Adjust other filament arrays to match actual filament count
                 for key in combined_project_settings:
                     if key.startswith('filament_') and isinstance(combined_project_settings[key], list):
                         current_len = len(combined_project_settings[key])
-                        if current_len > 0 and current_len != TARGET_FILAMENTS:
-                            if TARGET_FILAMENTS > current_len:
+                        if current_len > 0 and current_len != num_filaments:
+                            if num_filaments > current_len:
                                 # Extend by repeating the last value
                                 last_val = combined_project_settings[key][-1]
-                                combined_project_settings[key].extend([last_val] * (TARGET_FILAMENTS - current_len))
+                                combined_project_settings[key].extend([last_val] * (num_filaments - current_len))
                             else:
-                                # Truncate to 4
-                                combined_project_settings[key] = combined_project_settings[key][:TARGET_FILAMENTS]
+                                # Truncate to match actual count
+                                combined_project_settings[key] = combined_project_settings[key][:num_filaments]
 
                 # Convert to JSON string
                 combined_project_settings_str = json.dumps(combined_project_settings, indent=4, ensure_ascii=False)
