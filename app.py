@@ -187,6 +187,58 @@ def parse_bambu_filaments(filepath):
     return filaments
 
 
+# U1 bed dimensions
+U1_BED_SIZE = 230  # mm
+U1_BED_CENTER = U1_BED_SIZE / 2  # 115mm
+
+
+def recenter_model_transform(transform_str):
+    """
+    Parse a 3x4 transform matrix string and re-center X,Y to U1 bed center.
+    Transform format: "m00 m01 m02 m10 m11 m12 m20 m21 m22 tx ty tz"
+    Returns the modified transform string.
+    """
+    parts = transform_str.split()
+    if len(parts) != 12:
+        return transform_str  # Don't modify if unexpected format
+
+    try:
+        # Parse the 3x4 matrix
+        # First 9 values are the 3x3 rotation/scale matrix
+        # Last 3 values are translation (tx, ty, tz)
+        values = [float(p) for p in parts]
+
+        # Set X,Y to U1 bed center, keep Z as-is
+        values[9] = U1_BED_CENTER   # tx = 115
+        values[10] = U1_BED_CENTER  # ty = 115
+        # values[11] stays as-is (tz)
+
+        return ' '.join(str(v) for v in values)
+    except (ValueError, IndexError):
+        return transform_str  # Return original if parsing fails
+
+
+def fix_part_matrix_z_offset(matrix_str):
+    """
+    Parse a 4x4 matrix string and remove any Z offset.
+    Matrix format: "m00 m01 m02 m03 m10 m11 m12 m13 m20 m21 m22 m23 m30 m31 m32 m33"
+    The Z offset is typically at position m23 (index 11).
+    Returns the modified matrix string.
+    """
+    parts = matrix_str.split()
+    if len(parts) != 16:
+        return matrix_str  # Don't modify if unexpected format
+
+    try:
+        values = [float(p) for p in parts]
+        # Position 11 is m23 (Z translation in 4x4 matrix)
+        # Set it to 0 to remove Z offset
+        values[11] = 0.0
+        return ' '.join(str(int(v) if v == int(v) else v) for v in values)
+    except (ValueError, IndexError):
+        return matrix_str
+
+
 def convert_single_file(input_path, output_path, user_colors):
     """
     Convert a single Bambu .3mf file to Snapmaker U1 format.
@@ -308,8 +360,49 @@ def convert_single_file(input_path, output_path, user_colors):
                     if old_extruder in id_mapping:
                         metadata.set('value', id_mapping[old_extruder])
 
+                # Fix Z offset in part matrices (drop to bed)
+                for metadata in model_root.findall('.//metadata[@key="matrix"]'):
+                    old_matrix = metadata.get('value')
+                    if old_matrix:
+                        metadata.set('value', fix_part_matrix_z_offset(old_matrix))
+
                 modified_model_settings = ET.tostring(model_root, encoding='utf-8', xml_declaration=True)
                 # --- End Model Settings Modification ---
+
+                # --- Start 3D Model Transform Modification (Auto-center) ---
+                # Re-center model X,Y to U1 bed center (115, 115)
+                model_3d_content = None
+                modified_3d_model = None
+                if '3D/3dmodel.model' in zin.namelist():
+                    model_3d_content = zin.read('3D/3dmodel.model').decode('utf-8')
+                    # Parse with namespace handling
+                    # Register namespaces to preserve them in output
+                    namespaces = {
+                        '': 'http://schemas.microsoft.com/3dmanufacturing/core/2015/02',
+                        'p': 'http://schemas.microsoft.com/3dmanufacturing/production/2015/06',
+                        'BambuStudio': 'http://schemas.bambulab.com/package/2021'
+                    }
+                    for prefix, uri in namespaces.items():
+                        ET.register_namespace(prefix, uri)
+
+                    model_3d_root = ET.fromstring(model_3d_content)
+
+                    # Find all item elements in the build section and update transforms
+                    # Need to use namespace-aware search
+                    ns = {'m': 'http://schemas.microsoft.com/3dmanufacturing/core/2015/02'}
+                    for item in model_3d_root.findall('.//m:item', ns):
+                        transform = item.get('transform')
+                        if transform:
+                            item.set('transform', recenter_model_transform(transform))
+
+                    # Also check without namespace (some files may not use it)
+                    for item in model_3d_root.findall('.//item'):
+                        transform = item.get('transform')
+                        if transform:
+                            item.set('transform', recenter_model_transform(transform))
+
+                    modified_3d_model = ET.tostring(model_3d_root, encoding='utf-8', xml_declaration=True)
+                # --- End 3D Model Transform Modification ---
 
                 # --- Start Project Settings Modification ---
                 # Combine U1 printer settings with user-selected filament colors
@@ -388,15 +481,17 @@ def convert_single_file(input_path, output_path, user_colors):
 
                 # Write the modified archive
                 for item in zin.infolist():
-                    # Replace project settings, slice info, and model settings
+                    # Replace project settings, slice info, model settings, and 3D model
                     if item.filename == 'Metadata/project_settings.config':
                         zout.writestr(item, combined_project_settings_str.encode('utf-8'))
                     elif item.filename == 'Metadata/slice_info.config':
                         zout.writestr(item, modified_slice_info)
                     elif item.filename == 'Metadata/model_settings.config':
                         zout.writestr(item, modified_model_settings)
+                    elif item.filename == '3D/3dmodel.model' and modified_3d_model is not None:
+                        zout.writestr(item, modified_3d_model)
                     else:
-                        # Copy all other files as-is (including 3D models)
+                        # Copy all other files as-is
                         content = zin.read(item.filename)
                         zout.writestr(item, content)
 

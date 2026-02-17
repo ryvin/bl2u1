@@ -50,12 +50,20 @@ python app.py
 1. Reads original Bambu .3mf and extracts project settings
 2. Detects if supports were enabled via `different_settings_to_system` array
 3. Selects appropriate U1 template based on support detection
-4. Modifies three internal configs:
+4. Modifies internal configs:
    - `Metadata/slice_info.config` (XML) - printer model, filament mappings
-   - `Metadata/model_settings.config` (XML) - extruder references for painted regions
+   - `Metadata/model_settings.config` (XML) - extruder references for painted regions, Z offset fix
    - `Metadata/project_settings.config` (JSON) - printer settings, filament colors/types
-5. Pads to 4 filaments (U1 hardware requirement) with white PLA
-6. Writes new .3mf archive
+   - `3D/3dmodel.model` (XML) - auto-center model to U1 bed (115,115)
+5. **Auto-center/Drop-to-bed**: Re-centers model X,Y to U1 bed center (115mm) and removes Z offset from part matrices
+6. Pads to 4 filaments (U1 hardware requirement) with white PLA
+7. Writes new .3mf archive
+
+### Auto-Center Feature
+- **Problem**: Bambu files are designed for 256mm bed (center at 128,128), U1 has 230mm bed (center at 115,115)
+- **`recenter_model_transform()`**: Parses 3x4 transform matrix, sets X,Y translation to U1 bed center
+- **`fix_part_matrix_z_offset()`**: Removes Z offset from 4x4 part matrix (fixes adhesion issues)
+- **Constants**: `U1_BED_SIZE = 230`, `U1_BED_CENTER = 115`
 
 ### Batch Conversion
 - **`is_bambu_file(filepath)`**: Checks if a .3mf is from Bambu Lab (not already Snapmaker)
