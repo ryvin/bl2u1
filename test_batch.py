@@ -129,5 +129,133 @@ def test_filament_types_endpoint(page: Page):
     assert 'settings_id' in data[0]
 
 
+# ========== GUI Enhancement Tests ==========
+
+def test_settings_button_exists(page: Page):
+    """Test that settings gear icon exists in header."""
+    page.goto(BASE_URL)
+    settings_btn = page.locator("#settings-btn")
+    expect(settings_btn).to_be_visible()
+
+
+def test_settings_panel_opens(page: Page):
+    """Test that settings panel opens when clicking gear icon."""
+    page.goto(BASE_URL)
+
+    # Settings panel should be hidden initially
+    panel = page.locator("#settings-panel")
+    expect(panel).to_be_hidden()
+
+    # Click settings button
+    page.locator("#settings-btn").click()
+    expect(panel).to_be_visible()
+    expect(panel).to_contain_text("Settings")
+    expect(panel).to_contain_text("Output Folder")
+    expect(panel).to_contain_text("Source Folder")
+
+
+def test_settings_panel_closes(page: Page):
+    """Test that settings panel closes."""
+    page.goto(BASE_URL)
+
+    page.locator("#settings-btn").click()
+    expect(page.locator("#settings-panel")).to_be_visible()
+
+    # Close by clicking X
+    page.locator("#close-settings").click()
+    expect(page.locator("#settings-panel")).to_be_hidden()
+
+
+def test_settings_api_get(page: Page):
+    """Test that settings API returns data."""
+    page.goto(BASE_URL)
+    response = page.request.get(f"{BASE_URL}/settings")
+    assert response.ok
+    data = response.json()
+    assert 'output_folder' in data
+    assert 'source_folder' in data
+    assert 'auto_detect' in data
+    assert 'delete_duplicates' in data
+
+
+def test_settings_api_post(page: Page):
+    """Test that settings can be updated via API."""
+    page.goto(BASE_URL)
+    response = page.request.post(f"{BASE_URL}/settings", data={
+        "output_folder": "/tmp/test_output",
+        "source_folder": "/tmp/test_source",
+        "auto_detect": True,
+        "delete_duplicates": True
+    })
+    assert response.ok
+    data = response.json()
+    assert data.get('success') is True
+
+
+def test_history_api(page: Page):
+    """Test that history API returns data."""
+    page.goto(BASE_URL)
+    response = page.request.get(f"{BASE_URL}/history")
+    assert response.ok
+    data = response.json()
+    assert isinstance(data, list)
+
+
+def test_browse_api(page: Page):
+    """Test that browse API returns directory listing."""
+    page.goto(BASE_URL)
+    response = page.request.get(f"{BASE_URL}/browse?path=/")
+    assert response.ok
+    data = response.json()
+    assert 'path' in data
+    assert 'dirs' in data
+
+
+def test_check_new_api(page: Page):
+    """Test that check-new API returns data."""
+    page.goto(BASE_URL)
+    response = page.request.get(f"{BASE_URL}/check-new")
+    assert response.ok
+    data = response.json()
+    assert 'new_files' in data
+    assert 'count' in data
+
+
+def test_folder_browser_modal(page: Page):
+    """Test that folder browser modal opens."""
+    page.goto(BASE_URL)
+
+    # Open settings panel first
+    page.locator("#settings-btn").click()
+    expect(page.locator("#settings-panel")).to_be_visible()
+
+    # Folder browser should be hidden initially
+    browser = page.locator("#folder-browser")
+    expect(browser).to_be_hidden()
+
+    # Click browse output button
+    page.locator("#browse-output").click()
+    expect(browser).to_be_visible()
+    expect(browser).to_contain_text("Select Folder")
+
+
+def test_new_files_badge_exists(page: Page):
+    """Test that new files badge element exists on batch button."""
+    page.goto(BASE_URL)
+    badge = page.locator("#new-files-badge")
+    # Badge exists but may be hidden initially
+    expect(badge).to_be_attached()
+
+
+def test_new_files_alert_exists_in_batch_mode(page: Page):
+    """Test that new files alert exists in batch mode."""
+    page.goto(BASE_URL)
+    page.locator("#batch-mode-btn").click()
+
+    alert = page.locator("#new-files-alert")
+    # Alert exists but may be hidden (no new files)
+    expect(alert).to_be_attached()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
