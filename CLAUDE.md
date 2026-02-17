@@ -22,14 +22,24 @@ python app.py
 
 ### Single-File Flask Backend (`app.py`)
 - **Single File Routes**: `/` (UI), `/analyze` (POST), `/convert` (POST), `/download/<filename>` (serves files), `/filament-types` (returns filament profiles)
-- **Batch Routes**: `/batch-analyze` (POST - analyzes multiple files), `/batch-convert` (POST - converts all and returns ZIP)
+- **Batch Routes**: `/batch-analyze` (POST - analyzes multiple files), `/batch-convert` (POST - converts all to output folder)
+- **Settings/History Routes**: `/settings` (GET/POST), `/history` (GET), `/history/clear` (POST), `/browse` (GET), `/check-new` (GET), `/convert-new` (POST)
 - **File handling**: Uploads stored in `uploads/` with UUID-based session IDs, auto-cleaned after 8 hours
 - **3MF Processing**: Uses zipfile + xml.etree.ElementTree to modify internal XML/JSON configs
+
+### History Module (`history.py`)
+- **HistoryManager class**: Tracks converted files and user settings
+- **Settings**: output_folder, source_folder, auto_detect, delete_duplicates
+- **Conversion history**: Stores source filename, MD5 hash, output filename, timestamp, filament count
+- **Duplicate detection**: MD5 hash-based to skip exact duplicates or create versioned files
 
 ### Frontend (`templates/index.html`)
 - Single-page app using Tailwind CSS (CDN) and Font Awesome
 - **Single File Mode**: upload → configure filaments → download
-- **Batch Mode**: select folder → preview files → convert all → download ZIP
+- **Batch Mode**: select folder → preview files → convert all → files saved to output folder
+- **Settings Panel**: Configure output/source folders, auto-detect new files, duplicate handling
+- **Folder Browser**: Navigate server filesystem to select folders
+- **New Files Badge**: Shows count of unconverted files in source folder
 
 ### Template 3MF Files
 - `u1_template.3mf` - Base U1 printer profile (supports disabled)
@@ -60,6 +70,12 @@ python app.py
 
 ### Testing
 ```bash
-# Run Playwright tests
+# Run Playwright UI tests (21 tests)
 python3 -m pytest test_batch.py -v
+
+# Run History module tests (8 tests)
+python3 -m pytest test_history.py -v
+
+# Run all tests
+python3 -m pytest -v
 ```
