@@ -743,5 +743,77 @@ def check_new_files():
     return jsonify({'new_files': new_files, 'count': len(new_files)})
 
 
+@app.route('/convert-new', methods=['POST'])
+def convert_new_files():
+    """Convert all new files from the source folder to the output folder."""
+    settings = history_manager.get_settings()
+    source_folder = settings.get('source_folder', '')
+    output_folder = settings.get('output_folder', './converted_u1')
+
+    if not source_folder or not os.path.isdir(source_folder):
+        return jsonify({'error': 'Source folder not configured'}), 400
+
+    os.makedirs(output_folder, exist_ok=True)
+
+    converted_files = []
+    skipped_files = []
+    errors = []
+
+    for filename in os.listdir(source_folder):
+        if not filename.lower().endswith('.3mf'):
+            continue
+
+        filepath = os.path.join(source_folder, filename)
+        if not os.path.isfile(filepath):
+            continue
+
+        # Check if it's a Bambu file
+        if not is_bambu_file(filepath):
+            continue
+
+        # Hash the file
+        file_hash = history_manager.hash_file(filepath)
+
+        # Check if already converted
+        existing = history_manager.find_by_hash(file_hash)
+        if existing and settings.get('delete_duplicates', True):
+            skipped_files.append({'filename': filename, 'reason': 'Already converted'})
+            continue
+
+        # Parse filaments and auto-map
+        filaments = parse_bambu_filaments(filepath)
+        auto_colors = auto_map_filaments(filaments)
+
+        # Generate output filename with versioning
+        base_name = os.path.splitext(filename)[0]
+        output_filename = f"{base_name}_U1.3mf"
+        output_path = os.path.join(output_folder, output_filename)
+
+        # Version if exists
+        version = 2
+        while os.path.exists(output_path):
+            output_filename = f"{base_name}_U1_v{version}.3mf"
+            output_path = os.path.join(output_folder, output_filename)
+            version += 1
+
+        success, error = convert_single_file(filepath, output_path, auto_colors)
+
+        if success:
+            converted_files.append(output_filename)
+            history_manager.add_converted(filename, file_hash, output_filename, len(filaments))
+        else:
+            errors.append({'filename': filename, 'error': error})
+
+    return jsonify({
+        'converted_count': len(converted_files),
+        'converted_files': converted_files,
+        'skipped_count': len(skipped_files),
+        'skipped_files': skipped_files,
+        'error_count': len(errors),
+        'errors': errors,
+        'output_folder': output_folder
+    })
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=8080)

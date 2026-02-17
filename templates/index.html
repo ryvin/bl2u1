@@ -18,6 +18,9 @@
             <button id="info-btn" class="ml-1 text-cyan-400 hover:text-cyan-300 transition-colors">
                 <i class="fa-solid fa-circle-info"></i>
             </button>
+            <button id="settings-btn" class="ml-2 text-cyan-400 hover:text-cyan-300 transition-colors">
+                <i class="fa-solid fa-gear"></i>
+            </button>
         </p>
 
         <!-- Mode Toggle -->
@@ -26,8 +29,9 @@
                 <button id="single-mode-btn" class="px-4 py-2 rounded-md text-sm font-medium transition-all bg-cyan-600 text-white">
                     <i class="fa-solid fa-file mr-2"></i>Single File
                 </button>
-                <button id="batch-mode-btn" class="px-4 py-2 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white">
+                <button id="batch-mode-btn" class="px-4 py-2 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white relative">
                     <i class="fa-solid fa-folder-open mr-2"></i>Batch Convert
+                    <span id="new-files-badge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">0</span>
                 </button>
             </div>
         </div>
@@ -49,6 +53,87 @@
                     <li><i class="fa-solid fa-check text-green-400 mr-2"></i><strong>Batch mode:</strong> Convert entire folders with automatic filament mapping</li>
                 </ul>
                 <p class="text-slate-500 text-xs mt-4">Note: The converted file should be opened in Snapmaker Orca for final slicing.</p>
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="hidden fixed inset-y-0 right-0 w-80 bg-slate-800 border-l border-slate-600 shadow-2xl z-50 transform transition-transform">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-gear mr-2"></i>Settings</h3>
+                    <button id="close-settings" class="text-slate-400 hover:text-white transition-colors">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-1">Output Folder:</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="output-folder" class="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-white" placeholder="./converted_u1">
+                            <button id="browse-output" class="bg-slate-600 hover:bg-slate-500 px-3 py-2 rounded">
+                                <i class="fa-solid fa-folder-open"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-1">Source Folder (for monitoring):</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="source-folder" class="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-white" placeholder="E:\Downloads">
+                            <button id="browse-source" class="bg-slate-600 hover:bg-slate-500 px-3 py-2 rounded">
+                                <i class="fa-solid fa-folder-open"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="auto-detect" class="w-4 h-4" checked>
+                        <label for="auto-detect" class="text-sm text-slate-300">Auto-detect new files</label>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="delete-duplicates" class="w-4 h-4" checked>
+                        <label for="delete-duplicates" class="text-sm text-slate-300">Skip exact duplicates</label>
+                    </div>
+
+                    <hr class="border-slate-600">
+
+                    <div>
+                        <p class="text-sm text-slate-400">History: <span id="history-count">0</span> files converted</p>
+                        <div class="flex gap-2 mt-2">
+                            <button id="view-history" class="text-sm text-cyan-400 hover:text-cyan-300">View History</button>
+                            <button id="clear-history" class="text-sm text-red-400 hover:text-red-300">Clear History</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Folder Browser Modal -->
+        <div id="folder-browser" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-slate-800 border border-slate-600 rounded-xl p-6 w-96 max-h-96 shadow-2xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-cyan-400"><i class="fa-solid fa-folder-tree mr-2"></i>Select Folder</h3>
+                    <button id="close-browser" class="text-slate-400 hover:text-white transition-colors">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+
+                <div id="current-path" class="text-sm text-slate-400 mb-2 truncate"></div>
+
+                <div id="folder-list" class="bg-slate-700 rounded border border-slate-600 h-48 overflow-y-auto mb-4">
+                    <!-- Folders will be populated here -->
+                </div>
+
+                <div class="flex gap-2">
+                    <button id="browser-up" class="bg-slate-600 hover:bg-slate-500 px-3 py-2 rounded text-sm">
+                        <i class="fa-solid fa-arrow-up mr-1"></i>Up
+                    </button>
+                    <button id="browser-select" class="flex-1 bg-cyan-600 hover:bg-cyan-500 px-3 py-2 rounded text-sm font-medium">
+                        Select This Folder
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -89,6 +174,19 @@
 
         <!-- Batch Mode -->
         <div id="batch-mode" class="hidden transition-all">
+            <!-- New Files Alert -->
+            <div id="new-files-alert" class="hidden mb-4 bg-green-900 border border-green-700 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-bell text-green-400"></i>
+                        <span class="text-green-300"><span id="new-files-count">0</span> new files ready to convert</span>
+                    </div>
+                    <button id="convert-new-btn" class="bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded text-sm">
+                        Convert All New
+                    </button>
+                </div>
+            </div>
+
             <div id="batch-step1" class="transition-all">
                 <div class="flex items-center justify-center w-full">
                     <label for="batch-upload" id="batch-drop-zone" class="flex flex-col items-center justify-center w-full h-64 border-2 border-slate-600 border-dashed rounded-lg cursor-pointer bg-slate-700 hover:bg-slate-600 hover:border-cyan-500 transition-colors">
@@ -574,6 +672,246 @@
 
         document.getElementById('btn-batch-new').addEventListener('click', resetBatchMode);
         document.getElementById('btn-batch-restart').addEventListener('click', resetBatchMode);
+
+        // ========== SETTINGS ==========
+        let currentSettings = {};
+        let browserTarget = null; // 'output' or 'source'
+        let currentBrowsePath = '';
+        let newFilesData = [];
+
+        // Load settings on page load
+        async function loadSettings() {
+            try {
+                const res = await fetch('/settings');
+                currentSettings = await res.json();
+                document.getElementById('output-folder').value = currentSettings.output_folder || '';
+                document.getElementById('source-folder').value = currentSettings.source_folder || '';
+                document.getElementById('auto-detect').checked = currentSettings.auto_detect !== false;
+                document.getElementById('delete-duplicates').checked = currentSettings.delete_duplicates !== false;
+
+                // Load history count
+                const histRes = await fetch('/history');
+                const history = await histRes.json();
+                document.getElementById('history-count').textContent = history.length;
+
+                // Check for new files
+                if (currentSettings.auto_detect && currentSettings.source_folder) {
+                    checkNewFiles();
+                }
+            } catch (e) {
+                console.error('Failed to load settings:', e);
+            }
+        }
+
+        async function saveSettings() {
+            const settings = {
+                output_folder: document.getElementById('output-folder').value,
+                source_folder: document.getElementById('source-folder').value,
+                auto_detect: document.getElementById('auto-detect').checked,
+                delete_duplicates: document.getElementById('delete-duplicates').checked
+            };
+            try {
+                await fetch('/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+                currentSettings = settings;
+                if (settings.auto_detect && settings.source_folder) {
+                    checkNewFiles();
+                }
+            } catch (e) {
+                console.error('Failed to save settings:', e);
+            }
+        }
+
+        async function checkNewFiles() {
+            try {
+                const res = await fetch('/check-new');
+                const data = await res.json();
+                const badge = document.getElementById('new-files-badge');
+                const alert = document.getElementById('new-files-alert');
+                const count = document.getElementById('new-files-count');
+
+                if (data.count > 0) {
+                    badge.textContent = data.count > 99 ? '99+' : data.count;
+                    badge.classList.remove('hidden');
+                    count.textContent = data.count;
+                    alert.classList.remove('hidden');
+                    newFilesData = data.new_files;
+                } else {
+                    badge.classList.add('hidden');
+                    alert.classList.add('hidden');
+                    newFilesData = [];
+                }
+            } catch (e) {
+                console.error('Failed to check new files:', e);
+            }
+        }
+
+        // Settings panel toggle
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            document.getElementById('settings-panel').classList.remove('hidden');
+        });
+        document.getElementById('close-settings').addEventListener('click', () => {
+            document.getElementById('settings-panel').classList.add('hidden');
+            saveSettings();
+        });
+
+        // Auto-save on input change
+        ['output-folder', 'source-folder', 'auto-detect', 'delete-duplicates'].forEach(id => {
+            document.getElementById(id).addEventListener('change', saveSettings);
+        });
+
+        // Clear history
+        document.getElementById('clear-history').addEventListener('click', async () => {
+            if (confirm('Clear all conversion history?')) {
+                await fetch('/history/clear', { method: 'POST' });
+                document.getElementById('history-count').textContent = '0';
+            }
+        });
+
+        // View history (simple alert for now)
+        document.getElementById('view-history').addEventListener('click', async () => {
+            const res = await fetch('/history');
+            const history = await res.json();
+            if (history.length === 0) {
+                alert('No conversion history.');
+            } else {
+                const recent = history.slice(-10).reverse();
+                const list = recent.map(h => `${h.source} -> ${h.output}`).join('\n');
+                alert(`Recent conversions:\n\n${list}`);
+            }
+        });
+
+        // ========== FOLDER BROWSER ==========
+        async function openBrowser(target) {
+            browserTarget = target;
+            currentBrowsePath = '';
+            document.getElementById('folder-browser').classList.remove('hidden');
+            await loadFolderContents('');
+        }
+
+        async function loadFolderContents(path) {
+            try {
+                const res = await fetch(`/browse?path=${encodeURIComponent(path)}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                currentBrowsePath = data.path || '';
+                document.getElementById('current-path').textContent = currentBrowsePath || 'Select a drive';
+
+                const list = document.getElementById('folder-list');
+                list.innerHTML = '';
+
+                if (data.dirs) {
+                    data.dirs.forEach(dir => {
+                        const item = document.createElement('div');
+                        item.className = 'px-3 py-2 hover:bg-slate-600 cursor-pointer flex items-center gap-2';
+                        item.innerHTML = `<i class="fa-solid fa-folder text-yellow-400"></i><span class="truncate">${dir.name || dir}</span>`;
+                        item.addEventListener('click', () => {
+                            loadFolderContents(dir.path || dir);
+                        });
+                        list.appendChild(item);
+                    });
+                }
+
+                // Show/hide up button
+                document.getElementById('browser-up').style.display = data.parent ? 'block' : 'none';
+            } catch (e) {
+                console.error('Failed to browse:', e);
+            }
+        }
+
+        document.getElementById('browse-output').addEventListener('click', () => openBrowser('output'));
+        document.getElementById('browse-source').addEventListener('click', () => openBrowser('source'));
+
+        document.getElementById('close-browser').addEventListener('click', () => {
+            document.getElementById('folder-browser').classList.add('hidden');
+        });
+
+        document.getElementById('browser-up').addEventListener('click', async () => {
+            const res = await fetch(`/browse?path=${encodeURIComponent(currentBrowsePath)}`);
+            const data = await res.json();
+            if (data.parent) {
+                loadFolderContents(data.parent);
+            }
+        });
+
+        document.getElementById('browser-select').addEventListener('click', () => {
+            if (currentBrowsePath) {
+                if (browserTarget === 'output') {
+                    document.getElementById('output-folder').value = currentBrowsePath;
+                } else if (browserTarget === 'source') {
+                    document.getElementById('source-folder').value = currentBrowsePath;
+                }
+                saveSettings();
+            }
+            document.getElementById('folder-browser').classList.add('hidden');
+        });
+
+        // Convert new files button
+        document.getElementById('convert-new-btn').addEventListener('click', async () => {
+            if (newFilesData.length === 0) return;
+
+            // Show progress
+            document.getElementById('new-files-alert').classList.add('hidden');
+            document.getElementById('batch-step1').classList.add('hidden');
+            document.getElementById('batch-progress').classList.remove('hidden');
+
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+
+            progressBar.style.width = '20%';
+            progressText.textContent = `Converting ${newFilesData.length} new files...`;
+
+            try {
+                const res = await fetch('/convert-new', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+
+                progressBar.style.width = '80%';
+
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.error);
+
+                progressBar.style.width = '100%';
+
+                // Show complete
+                document.getElementById('batch-progress').classList.add('hidden');
+                document.getElementById('batch-complete').classList.remove('hidden');
+
+                document.getElementById('complete-summary').textContent =
+                    `Successfully converted ${data.converted_count} files to ${data.output_folder}.` +
+                    (data.skipped_count > 0 ? ` ${data.skipped_count} skipped.` : '') +
+                    (data.error_count > 0 ? ` ${data.error_count} failed.` : '');
+
+                // Hide download link for server-side conversion (files are saved directly)
+                document.getElementById('batch-download-link').classList.add('hidden');
+
+                // Update badge
+                checkNewFiles();
+
+                // Update history count
+                const histRes = await fetch('/history');
+                const history = await histRes.json();
+                document.getElementById('history-count').textContent = history.length;
+
+            } catch (err) {
+                alert('Conversion Error: ' + err.message);
+                resetBatchMode();
+            }
+        });
+
+        // Load settings on page load
+        loadSettings();
     </script>
 </body>
 </html>
