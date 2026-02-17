@@ -7,8 +7,12 @@ import uuid
 import time
 import xml.etree.ElementTree as ET
 from flask import Flask, render_template, request, send_file, jsonify
+from history import HistoryManager
 
 app = Flask(__name__)
+
+# Initialize history manager
+history_manager = HistoryManager('conversion_history.json')
 
 # CONFIGURATION
 UPLOAD_FOLDER = 'uploads'
@@ -533,7 +537,7 @@ def batch_analyze():
 
 @app.route('/batch-convert', methods=['POST'])
 def batch_convert():
-    """Convert all files in a batch session and return a ZIP."""
+    """Convert all files in a batch session."""
     data = request.json
     batch_session_id = data.get('batch_session_id')
     if not batch_session_id:
@@ -543,25 +547,25 @@ def batch_convert():
     if not os.path.exists(batch_folder):
         return jsonify({'error': 'Batch session expired or not found'}), 404
 
-    # Get the list of files to convert
+    # Get output folder from settings
+    settings = history_manager.get_settings()
+    output_folder = settings.get('output_folder', './converted_u1')
+    os.makedirs(output_folder, exist_ok=True)
+
     files_to_convert = data.get('files', [])
     if not files_to_convert:
-        # If no specific files provided, convert all in folder
         files_to_convert = [f for f in os.listdir(batch_folder) if f.endswith('.3mf')]
 
     converted_files = []
+    skipped_files = []
     errors = []
-    output_folder = os.path.join(batch_folder, 'output')
-    os.makedirs(output_folder, exist_ok=True)
 
     for file_info in files_to_convert:
-        # Handle both dict (from frontend) and string (filename) formats
         if isinstance(file_info, dict):
             filename = file_info.get('filename')
             auto_colors = file_info.get('auto_colors', {})
         else:
             filename = file_info
-            # Parse filaments and auto-map for this file
             input_path = os.path.join(batch_folder, filename)
             filaments = parse_bambu_filaments(input_path)
             auto_colors = auto_map_filaments(filaments)
@@ -571,38 +575,47 @@ def batch_convert():
             errors.append({'filename': filename, 'error': 'File not found'})
             continue
 
-        # Generate output filename: original_name_U1.3mf
+        # Calculate hash for duplicate detection
+        file_hash = history_manager.hash_file(input_path)
+
+        # Check if exact duplicate
+        existing = history_manager.find_by_hash(file_hash)
+        if existing and settings.get('delete_duplicates', True):
+            skipped_files.append({'filename': filename, 'reason': 'Already converted'})
+            continue
+
+        # Generate output filename with versioning
         base_name = os.path.splitext(filename)[0]
         output_filename = f"{base_name}_U1.3mf"
         output_path = os.path.join(output_folder, output_filename)
 
+        # Version if exists
+        version = 2
+        while os.path.exists(output_path):
+            output_filename = f"{base_name}_U1_v{version}.3mf"
+            output_path = os.path.join(output_folder, output_filename)
+            version += 1
+
+        filaments = parse_bambu_filaments(input_path)
         success, error = convert_single_file(input_path, output_path, auto_colors)
 
         if success:
             converted_files.append(output_filename)
+            history_manager.add_converted(filename, file_hash, output_filename, len(filaments))
         else:
             errors.append({'filename': filename, 'error': error})
-
-    if not converted_files:
-        return jsonify({'error': 'No files were converted successfully', 'details': errors}), 500
-
-    # Create ZIP archive of all converted files
-    zip_filename = f"{batch_session_id}_U1_Batch.zip"
-    zip_path = os.path.join(app.config['UPLOAD_FOLDER'], zip_filename)
-
-    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-        for filename in converted_files:
-            filepath = os.path.join(output_folder, filename)
-            zf.write(filepath, filename)
 
     # Clean up batch folder
     shutil.rmtree(batch_folder, ignore_errors=True)
 
     return jsonify({
-        'download_url': f'/download/{zip_filename}',
         'converted_count': len(converted_files),
+        'converted_files': converted_files,
+        'skipped_count': len(skipped_files),
+        'skipped_files': skipped_files,
         'error_count': len(errors),
-        'errors': errors
+        'errors': errors,
+        'output_folder': output_folder
     })
 
 
@@ -617,6 +630,118 @@ def download_file(filename):
         download_name = 'Snapmaker_U1_Ready.3mf'
 
     return send_file(filepath, as_attachment=True, download_name=download_name)
+
+
+@app.route('/settings', methods=['GET'])
+def get_settings():
+    """Get current settings."""
+    return jsonify(history_manager.get_settings())
+
+
+@app.route('/settings', methods=['POST'])
+def update_settings():
+    """Update settings."""
+    data = request.json
+    history_manager.update_settings(data)
+    return jsonify({'success': True, 'settings': history_manager.get_settings()})
+
+
+@app.route('/history', methods=['GET'])
+def get_history():
+    """Get conversion history."""
+    return jsonify(history_manager.get_converted())
+
+
+@app.route('/history/clear', methods=['POST'])
+def clear_history():
+    """Clear conversion history."""
+    history_manager.clear_history()
+    return jsonify({'success': True})
+
+
+@app.route('/browse', methods=['GET'])
+def browse_directory():
+    """List contents of a directory for folder browser."""
+    path = request.args.get('path', '')
+
+    # Default to common roots
+    if not path:
+        # Return drive letters on Windows, root dirs on Linux
+        if os.name == 'nt':
+            import string
+            drives = [f"{d}:\\" for d in string.ascii_uppercase if os.path.exists(f"{d}:\\")]
+            return jsonify({'path': '', 'dirs': drives, 'is_root': True})
+        else:
+            path = '/'
+
+    # Normalize path
+    path = os.path.normpath(path)
+
+    if not os.path.isdir(path):
+        return jsonify({'error': 'Path is not a directory'}), 400
+
+    try:
+        entries = []
+        for name in sorted(os.listdir(path)):
+            full_path = os.path.join(path, name)
+            if os.path.isdir(full_path):
+                entries.append({
+                    'name': name,
+                    'path': full_path,
+                    'type': 'dir'
+                })
+        return jsonify({
+            'path': path,
+            'parent': os.path.dirname(path) if path != '/' else None,
+            'dirs': entries
+        })
+    except PermissionError:
+        return jsonify({'error': 'Permission denied'}), 403
+
+
+@app.route('/check-new', methods=['GET'])
+def check_new_files():
+    """Find unconverted files in source folder."""
+    settings = history_manager.get_settings()
+    source_folder = settings.get('source_folder', '')
+
+    if not source_folder or not os.path.isdir(source_folder):
+        return jsonify({'new_files': [], 'count': 0, 'error': 'Source folder not configured'})
+
+    new_files = []
+
+    for filename in os.listdir(source_folder):
+        if not filename.lower().endswith('.3mf'):
+            continue
+
+        filepath = os.path.join(source_folder, filename)
+        if not os.path.isfile(filepath):
+            continue
+
+        # Check if it's a Bambu file
+        if not is_bambu_file(filepath):
+            continue
+
+        # Hash the file
+        file_hash = history_manager.hash_file(filepath)
+
+        # Check if already converted
+        existing = history_manager.find_by_hash(file_hash)
+        if existing:
+            continue
+
+        # Parse filaments for preview
+        filaments = parse_bambu_filaments(filepath)
+
+        new_files.append({
+            'filename': filename,
+            'filepath': filepath,
+            'hash': file_hash,
+            'filaments': len(filaments)
+        })
+
+    return jsonify({'new_files': new_files, 'count': len(new_files)})
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
