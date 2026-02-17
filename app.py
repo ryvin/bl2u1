@@ -11,8 +11,10 @@ from history import HistoryManager
 
 app = Flask(__name__)
 
-# Initialize history manager
-history_manager = HistoryManager('conversion_history.json')
+# Initialize history manager (use data directory for Docker persistence)
+DATA_DIR = os.environ.get('DATA_DIR', 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+history_manager = HistoryManager(os.path.join(DATA_DIR, 'conversion_history.json'))
 
 # CONFIGURATION
 UPLOAD_FOLDER = 'uploads'
@@ -816,4 +818,7 @@ def convert_new_files():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8085)
+    import os
+    debug = os.environ.get('FLASK_ENV', 'development') == 'development'
+    port = int(os.environ.get('PORT', 8080))
+    app.run(debug=debug, host='0.0.0.0', port=port)
