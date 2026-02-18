@@ -284,6 +284,7 @@
         // Mode state
         let currentMode = 'single'; // 'single' or 'batch'
         let currentSessionId = "";
+        let currentOriginalName = "";
         let batchSessionId = "";
         let batchFiles = [];
 
@@ -357,6 +358,7 @@
                 if (!response.ok) throw new Error(data.error);
 
                 currentSessionId = data.session_id;
+                currentOriginalName = data.original_name || 'Converted';
                 renderFilaments(data.filaments);
 
                 // Move to step 2
@@ -486,12 +488,20 @@
                 const res = await fetch('/convert', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ session_id: currentSessionId, colors: colors })
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        colors: colors,
+                        original_name: currentOriginalName
+                    })
                 });
                 const data = await res.json();
 
                 if (data.download_url) {
-                    window.location.href = data.download_url;
+                    // Use original filename for download
+                    const downloadUrl = data.download_name
+                        ? `${data.download_url}?name=${encodeURIComponent(data.download_name)}`
+                        : data.download_url;
+                    window.location.href = downloadUrl;
                 } else {
                     alert("Conversion Error");
                 }

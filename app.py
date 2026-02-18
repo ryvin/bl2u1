@@ -534,13 +534,13 @@ def analyze():
     # Analyze colors
     filaments = parse_bambu_filaments(filepath)
 
-    if len(filaments) > 4:
-        os.remove(filepath)  # Clean up
-        return jsonify({'error': f'Too many colors ({len(filaments)}). The U1 supports a maximum of 4.'}), 400
+    # Get original filename for later use
+    original_name = os.path.splitext(file.filename)[0]
 
     return jsonify({
         'session_id': session_id,
-        'filaments': filaments
+        'filaments': filaments,
+        'original_name': original_name
     })
 
 @app.route('/convert', methods=['POST'])
@@ -550,6 +550,7 @@ def convert():
     if not session_id:
         return jsonify({'error': 'No session ID provided'}), 400
 
+    original_name = data.get('original_name', 'Converted')
     input_filename = f"{session_id}_input.3mf"
     output_filename = f"{session_id}_U1_Ready.3mf"
     input_path = os.path.join(app.config['UPLOAD_FOLDER'], input_filename)
@@ -563,7 +564,12 @@ def convert():
     success, error = convert_single_file(input_path, output_path, user_colors)
 
     if success:
-        return jsonify({'download_url': f'/download/{output_filename}'})
+        # Return download URL with original name for proper download filename
+        download_name = f"{original_name}_U1.3mf"
+        return jsonify({
+            'download_url': f'/download/{output_filename}',
+            'download_name': download_name
+        })
     else:
         return jsonify({'error': error}), 500
 
@@ -600,19 +606,12 @@ def batch_analyze():
         # Check if it's a Bambu file
         if is_bambu_file(filepath):
             filaments = parse_bambu_filaments(filepath)
-            if len(filaments) > 4:
-                skipped_files.append({
-                    'filename': safe_filename,
-                    'reason': f'Too many colors ({len(filaments)})'
-                })
-                os.remove(filepath)
-            else:
-                auto_colors = auto_map_filaments(filaments)
-                bambu_files.append({
-                    'filename': safe_filename,
-                    'filaments': filaments,
-                    'auto_colors': auto_colors
-                })
+            auto_colors = auto_map_filaments(filaments)
+            bambu_files.append({
+                'filename': safe_filename,
+                'filaments': filaments,
+                'auto_colors': auto_colors
+            })
         else:
             skipped_files.append({
                 'filename': safe_filename,
@@ -720,11 +719,13 @@ def batch_convert():
 def download_file(filename):
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-    # Determine download name based on file type
-    if filename.endswith('.zip'):
-        download_name = 'Snapmaker_U1_Batch.zip'
-    else:
-        download_name = 'Snapmaker_U1_Ready.3mf'
+    # Use provided download name or determine based on file type
+    download_name = request.args.get('name')
+    if not download_name:
+        if filename.endswith('.zip'):
+            download_name = 'Snapmaker_U1_Batch.zip'
+        else:
+            download_name = 'Snapmaker_U1_Ready.3mf'
 
     return send_file(filepath, as_attachment=True, download_name=download_name)
 
